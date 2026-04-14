@@ -1,12 +1,9 @@
 """
 TranspoBot — Backend FastAPI complet
-Projet GLSi L3 — ESP/UCAD
 """
 
 from fastapi import FastAPI, HTTPException
-from fastapi.staticfiles import StaticFiles
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse
 from pydantic import BaseModel
 import mysql.connector
 import os, re, json
@@ -16,6 +13,7 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
+# ===================== APP =====================
 app = FastAPI(title="TranspoBot API", version="1.0.0")
 
 app.add_middleware(
@@ -25,59 +23,36 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# ── CONFIG ─────────────────────────────────────────────
+# ===================== CONFIG =====================
 DB_CONFIG = {
     "host": os.getenv("DB_HOST", "localhost"),
     "user": os.getenv("DB_USER", "root"),
     "password": os.getenv("DB_PASSWORD", ""),
     "database": os.getenv("DB_NAME", "transpobot"),
-    "charset": "utf8mb4",
 }
 
-LLM_API_KEY  = os.getenv("OPENAI_API_KEY", "")
-LLM_MODEL    = os.getenv("LLM_MODEL", "gpt-4o-mini")
-LLM_BASE_URL = os.getenv("LLM_BASE_URL", "https://api.openai.com/v1")
+LLM_API_KEY = os.getenv("OPENAI_API_KEY", "")
+LLM_MODEL = os.getenv("LLM_MODEL", "gpt-4o-mini")
+LLM_BASE_URL = "https://api.openai.com/v1"
 
-PORT = int(os.getenv("PORT", 8000))  # ✅ IMPORTANT RAILWAY
+PORT = int(os.getenv("PORT", 8000))
 
-# ── SCHÉMA ─────────────────────────────────────────────
-DB_SCHEMA = """
-Tables MySQL disponibles dans la base 'transpobot' :
+# ===================== ROOT (IMPORTANT) =====================
+@app.get("/")
+def root():
+    return {
+        "status": "ok",
+        "message": "TranspoBot API running",
+        "docs": "/docs",
+        "health": "/health"
+    }
 
-vehicules(id, immatriculation, type ENUM['bus','minibus','taxi'], capacite INT,
-          statut ENUM['actif','maintenance','hors_service'], kilometrage INT, date_acquisition DATE)
+# ===================== HEALTH =====================
+@app.get("/health")
+def health():
+    return {"status": "ok"}
 
-chauffeurs(id, nom, prenom, telephone, numero_permis, categorie_permis,
-           disponibilite BOOLEAN, vehicule_id FK→vehicules, date_embauche DATE)
-
-lignes(id, code, nom, origine, destination, distance_km DECIMAL, duree_minutes INT)
-
-tarifs(id, ligne_id FK→lignes, type_client ENUM['normal','etudiant','senior'], prix DECIMAL)
-
-trajets(id, ligne_id FK→lignes, chauffeur_id FK→chauffeurs, vehicule_id FK→vehicules,
-        date_heure_depart DATETIME, date_heure_arrivee DATETIME,
-        statut ENUM['planifie','en_cours','termine','annule'],
-        nb_passagers INT, recette DECIMAL)
-
-incidents(id, trajet_id FK→trajets, type ENUM['panne','accident','retard','autre'],
-          description TEXT, gravite ENUM['faible','moyen','grave'],
-          date_incident DATETIME, resolu BOOLEAN)
-"""
-
-SYSTEM_PROMPT = f"""
-Tu es TranspoBot, assistant SQL.
-
-{DB_SCHEMA}
-
-Règles :
-- SELECT uniquement
-- JSON obligatoire:
-{{"sql": "...", "explication": "..."}}
-- sinon:
-{{"sql": null, "explication": "..."}}
-"""
-
-# ── DB ─────────────────────────────────────────────
+# ===================== DB =====================
 def get_db():
     return mysql.connector.connect(**DB_CONFIG)
 
@@ -105,20 +80,16 @@ def execute_query(sql: str):
         cursor.close()
         conn.close()
 
-# ── sécurité SQL ─────────────────────────────────────
+# ===================== SECURITY =====================
 FORBIDDEN = re.compile(
     r'\b(INSERT|UPDATE|DELETE|DROP|ALTER|CREATE|TRUNCATE)\b',
     re.IGNORECASE
 )
 
-def is_safe_query(sql: str) -> bool:
-    if not sql:
-        return False
-    if FORBIDDEN.search(sql):
-        return False
-    return sql.strip().upper().startswith("SELECT")
+def is_safe_query(sql: str):
+    return sql and not FORBIDDEN.search(sql) and sql.strip().upper().startswith("SELECT")
 
-# ── LLM ─────────────────────────────────────────────
+# ===================== LLM =====================
 async def ask_llm(question: str):
     async with httpx.AsyncClient() as client:
         r = await client.post(
@@ -127,7 +98,7 @@ async def ask_llm(question: str):
             json={
                 "model": LLM_MODEL,
                 "messages": [
-                    {"role": "system", "content": SYSTEM_PROMPT},
+                    {"role": "system", "content": "Tu génères du SQL SELECT uniquement en JSON."},
                     {"role": "user", "content": question},
                 ],
                 "temperature": 0,
@@ -136,19 +107,18 @@ async def ask_llm(question: str):
             timeout=30,
         )
         r.raise_for_status()
-        return r.json()["choices"][0]["message"]["content"]
+        return json.loads(r.json()["choices"][0]["message"]["content"])
 
-# ── MODELE ───────────────────────────────────────────
+# ===================== MODEL =====================
 class ChatMessage(BaseModel):
     question: str
     history: list = []
 
-# ── ROUTE CHAT ───────────────────────────────────────
+# ===================== CHAT =====================
 @app.post("/api/chat")
 async def chat(msg: ChatMessage):
     try:
-        raw = await ask_llm(msg.question)
-        llm = json.loads(raw)
+        llm = await ask_llm(msg.question)
 
         sql = llm.get("sql")
         exp = llm.get("explication", "")
@@ -170,18 +140,3 @@ async def chat(msg: ChatMessage):
 
     except Exception as e:
         raise HTTPException(500, str(e))
-
-# ── HEALTH CHECK ─────────────────────────────────────
-@app.get("/health")
-def health():
-    return {"status": "ok"}
-
-# ── ROOT ─────────────────────────────────────────────
-@app.get("/")
-def root():
-    return {"message": "TranspoBot API running"}
-
-# ── RAILWAY START ────────────────────────────────────
-if __name__ == "__main__":
-    import uvicorn
-    uvicorn.run("main:app", host="0.0.0.0", port=PORT, reload=False)
