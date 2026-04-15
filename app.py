@@ -1,6 +1,7 @@
 """
 TranspoBot — Backend FastAPI
 Groq + MySQL — Version debug robuste
+Personne 3 : corrections LLM — date dynamique + erreur SQL propre
 """
 import os, re, json, traceback
 from datetime import datetime
@@ -39,7 +40,14 @@ DB_CONFIG = {
 
 print(f"[CONFIG] KEY={LLM_API_KEY[:12] if LLM_API_KEY else 'VIDE'}... MODEL={LLM_MODEL}")
 
-SYSTEM_PROMPT = """Tu es TranspoBot, assistant Text-to-SQL pour une compagnie de transport sénégalaise.
+# ── CORRECTION 1 : date du jour injectée dynamiquement dans le prompt ──
+def build_system_prompt() -> str:
+    today = datetime.now().strftime("%Y-%m-%d")
+    day_name = ["lundi","mardi","mercredi","jeudi","vendredi","samedi","dimanche"][datetime.now().weekday()]
+    return f"""Tu es TranspoBot, assistant Text-to-SQL pour une compagnie de transport sénégalaise.
+
+DATE DU JOUR : {today} ({day_name})
+Cette information est essentielle pour les requêtes temporelles ("cette semaine", "ce mois-ci", "aujourd'hui").
 
 BASE MySQL (base: transpobot) :
 vehicules(id, immatriculation, type ENUM['bus','minibus','taxi'], capacite, statut ENUM['actif','maintenance','hors_service'], kilometrage, date_acquisition)
@@ -49,22 +57,33 @@ tarifs(id, ligne_id FK→lignes, type_client ENUM['normal','etudiant','senior'],
 trajets(id, ligne_id FK→lignes, chauffeur_id FK→chauffeurs, vehicule_id FK→vehicules, date_heure_depart DATETIME, date_heure_arrivee DATETIME, statut ENUM['planifie','en_cours','termine','annule'], nb_passagers, recette)
 incidents(id, trajet_id FK→trajets, type ENUM['panne','accident','retard','autre'], description, gravite ENUM['faible','moyen','grave'], date_incident DATETIME, resolu BOOLEAN)
 
-RÈGLES :
-1. SELECT uniquement. Jamais INSERT/UPDATE/DELETE/DROP.
+RÈGLES ABSOLUES :
+1. SELECT uniquement. Jamais INSERT/UPDATE/DELETE/DROP/ALTER/TRUNCATE.
 2. Réponds UNIQUEMENT en JSON valide sans markdown ni backticks.
-3. Format : {"sql":"SELECT ...","explication":"...en français"}
-4. Hors BDD : {"sql":null,"explication":"réponse"}
-5. LIMIT 100. Valeurs sans accents : 'termine','planifie','en_cours','annule'.
-6. Cette semaine : date_heure_depart >= DATE_SUB(NOW(), INTERVAL 7 DAY)
-7. Ce mois : MONTH(col)=MONTH(NOW()) AND YEAR(col)=YEAR(NOW())
+3. Format strict : {{"sql":"SELECT ...","explication":"...en français"}}
+4. Hors BDD : {{"sql":null,"explication":"réponse en français"}}
+5. LIMIT 100 sur tous les résultats.
+6. Valeurs ENUM SANS accents : 'termine','planifie','en_cours','annule','actif','maintenance','hors_service','panne','accident','retard','faible','moyen','grave','normal','etudiant','senior'.
+7. Cette semaine : date_heure_depart >= DATE_SUB(NOW(), INTERVAL 7 DAY)
+8. Ce mois : MONTH(col)=MONTH(NOW()) AND YEAR(col)=YEAR(NOW())
+9. Aujourd'hui : DATE(col) = CURDATE()
 
-EXEMPLES :
+EXEMPLES FEW-SHOT :
+
 Q: "Combien de trajets cette semaine ?"
-{"sql":"SELECT COUNT(*) AS nb FROM trajets WHERE date_heure_depart >= DATE_SUB(NOW(), INTERVAL 7 DAY) AND statut='termine'","explication":"Trajets terminés cette semaine."}
+{{"sql":"SELECT COUNT(*) AS nb FROM trajets WHERE date_heure_depart >= DATE_SUB(NOW(), INTERVAL 7 DAY) AND statut='termine'","explication":"Nombre de trajets terminés au cours des 7 derniers jours."}}
+
 Q: "Véhicules en maintenance ?"
-{"sql":"SELECT immatriculation, type, kilometrage FROM vehicules WHERE statut='maintenance'","explication":"Véhicules en maintenance."}
+{{"sql":"SELECT immatriculation, type, kilometrage FROM vehicules WHERE statut='maintenance' LIMIT 100","explication":"Liste des véhicules actuellement en maintenance."}}
+
 Q: "Quel chauffeur a le plus d incidents ?"
-{"sql":"SELECT c.nom, c.prenom, COUNT(i.id) AS nb FROM incidents i JOIN trajets t ON i.trajet_id=t.id JOIN chauffeurs c ON t.chauffeur_id=c.id GROUP BY c.id ORDER BY nb DESC LIMIT 1","explication":"Chauffeur avec le plus d incidents."}
+{{"sql":"SELECT c.nom, c.prenom, COUNT(i.id) AS nb FROM incidents i JOIN trajets t ON i.trajet_id=t.id JOIN chauffeurs c ON t.chauffeur_id=c.id GROUP BY c.id ORDER BY nb DESC LIMIT 1","explication":"Le chauffeur ayant enregistré le plus grand nombre d incidents."}}
+
+Q: "Quelle ligne est la plus rentable ?"
+{{"sql":"SELECT l.code, l.nom, SUM(t.recette) AS recette_totale FROM trajets t JOIN lignes l ON t.ligne_id=l.id WHERE t.statut='termine' GROUP BY l.id ORDER BY recette_totale DESC LIMIT 1","explication":"La ligne générant la plus grande recette totale."}}
+
+Q: "Quels incidents graves ne sont pas encore résolus ?"
+{{"sql":"SELECT i.id, i.type, i.description, i.date_incident, CONCAT(c.prenom,' ',c.nom) AS chauffeur FROM incidents i JOIN trajets t ON i.trajet_id=t.id JOIN chauffeurs c ON t.chauffeur_id=c.id WHERE i.gravite='grave' AND i.resolu=FALSE ORDER BY i.date_incident DESC LIMIT 100","explication":"Liste des incidents graves non encore résolus."}}
 """
 
 app = FastAPI(title="TranspoBot")
@@ -96,7 +115,10 @@ async def call_groq(question: str, history: list = None) -> dict:
     if not LLM_API_KEY:
         raise ValueError("GROQ_API_KEY vide — vérifie .env")
 
-    messages = [{"role": "system", "content": SYSTEM_PROMPT}]
+    # CORRECTION 1 : prompt reconstruit à chaque appel pour avoir la date fraîche
+    system_prompt = build_system_prompt()
+
+    messages = [{"role": "system", "content": system_prompt}]
     if history:
         for h in (history[-6:]):
             if isinstance(h, dict) and h.get("role") and h.get("content"):
@@ -121,7 +143,7 @@ async def call_groq(question: str, history: list = None) -> dict:
     content = resp.json()["choices"][0]["message"]["content"].strip()
     print(f"[GROQ] raw={content[:300]}")
 
-    # Nettoyer markdown
+    # Nettoyer markdown éventuel
     content = re.sub(r"```(?:json)?", "", content).strip().strip("`").strip()
 
     try:
@@ -146,10 +168,22 @@ async def chat(msg: ChatMessage):
         if not sql:
             return {"answer": expl, "data": [], "sql": None, "count": 0}
 
-        if FORBIDDEN.search(sql) or not sql.strip().upper().startswith(("SELECT","WITH")):
+        if FORBIDDEN.search(sql) or not sql.strip().upper().startswith(("SELECT", "WITH")):
             return JSONResponse(400, {"detail": "Seules les requêtes SELECT sont autorisées."})
 
-        data = execute_query(sql)
+        # CORRECTION 2 : erreur SQL retournée proprement à l'utilisateur
+        try:
+            data = execute_query(sql)
+        except Exception as sql_err:
+            print(f"[SQL ERREUR] {sql_err}")
+            return {
+                "answer": f"La requête SQL générée a échoué : {str(sql_err)}. "
+                          f"Essayez de reformuler votre question.",
+                "data": [],
+                "sql": sql,
+                "count": 0,
+            }
+
         print(f"[CHAT] rows={len(data)}")
         return {"answer": expl, "data": data, "sql": sql, "count": len(data)}
 
@@ -249,8 +283,13 @@ def get_lignes():
 def health():
     try:
         execute_query("SELECT 1")
-        return {"status": "ok", "db": "connected", "llm": LLM_MODEL,
-                "key_ok": bool(LLM_API_KEY)}
+        return {
+            "status": "ok",
+            "db": "connected",
+            "llm": LLM_MODEL,
+            "key_ok": bool(LLM_API_KEY),
+            "date_today": datetime.now().strftime("%Y-%m-%d"),
+        }
     except Exception as e:
         return {"status": "error", "db": str(e)}
 
