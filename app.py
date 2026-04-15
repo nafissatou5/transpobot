@@ -105,5 +105,5 @@ def home():
 
 if __name__ == "__main__":
     import uvicorn
-    # FORCER le log_level à debug et désactiver le reloader Windows
-    uvicorn.run(app, host="127.0.0.1", port=8000, log_level="debug", reload=False)
+    # On force l'exécution sur localhost et on retire le reloader qui masque les erreurs
+    uvicorn.run(app, host="127.0.0.1", port=8000, reload=False, access_log=True)
