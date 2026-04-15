@@ -21,13 +21,25 @@ import mysql.connector
 
 
 # =====================================================
-# Chargement GARANTI du .env (FIX WINDOWS IMPORTANT)
+# Chargement GARANTI du .env
 # =====================================================
 env_path = Path(__file__).resolve().parent / ".env"
 load_dotenv(dotenv_path=env_path)
 
-print("ENV PATH:", env_path)
-print("GROQ_API_KEY =", os.getenv("GROQ_API_KEY"))
+# DEBUG : On affiche si les clés sont bien chargées
+LLM_API_KEY = os.getenv("GROQ_API_KEY") or os.getenv("OPENAI_API_KEY") 
+
+print(f"--- DEBUG CONFIG ---")
+print(f"Fichier .env cherché ici : {env_path}")
+print(f"Fichier existe ? : {env_path.exists()}")
+if LLM_API_KEY:
+    print(f"GROQ_API_KEY trouvée : {LLM_API_KEY[:7]}***") # Affiche juste le début pour sécurité
+else:
+    print(f"❌ ERREUR : GROQ_API_KEY est VIDE !")
+print(f"--------------------")
+
+if not LLM_API_KEY:
+    raise RuntimeError("La clé API n'est pas chargée. Vérifiez votre fichier .env")
 
 
 # =====================================================
