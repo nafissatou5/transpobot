@@ -1,6 +1,6 @@
 """
-TranspoBot — Backend FastAPI corrigé avec logs de debug
-Projet GLSi L3 — ESP/UCAD
+TranspoBot — Backend FastAPI
+Correction : Debug Forcé & Stabilité Windows
 """
 
 from fastapi import FastAPI, HTTPException
@@ -15,7 +15,7 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
-app = FastAPI(title="TranspoBot API", version="1.0.1")
+app = FastAPI(title="TranspoBot API", version="1.0.2")
 
 app.add_middleware(
     CORSMiddleware,
@@ -46,11 +46,15 @@ trajets(id, ligne_id, chauffeur_id, vehicule_id, date_heure_depart, statut, nb_p
 incidents(id, trajet_id, type, description, gravite, date_incident, resolu)
 """
 
-SYSTEM_PROMPT = f"""Tu es TranspoBot. Réponds uniquement en JSON avec ce format :
-{{"sql": "LA_REQUETE_SQL", "explication": "TON_EXPLICATION"}}
+SYSTEM_PROMPT = f"""Tu es TranspoBot. Réponds UNIQUEMENT en JSON :
+{{"sql": "SELECT...", "explication": "..."}}
 Schema: {DB_SCHEMA}
-Important: Pas de texte avant ou après le JSON.
 """
+
+def log_error(msg):
+    """Écrit l'erreur dans un fichier pour être sûr de la lire."""
+    with open("debug_log.txt", "a", encoding="utf-8") as f:
+        f.write(f"\n[{datetime.now()}] {msg}\n")
 
 def execute_query(sql: str):
     conn = mysql.connector.connect(**DB_CONFIG)
@@ -81,8 +85,8 @@ async def ask_llm(question: str, history: list = None) -> dict:
     if history: messages.extend(history[-6:])
     messages.append({"role": "user", "content": question})
 
-    async with httpx.AsyncClient() as client:
-        print(f"--- Envoi à OpenAI ({LLM_MODEL}) ---")
+    async with httpx.AsyncClient(verify=False) as client: # verify=False évite les soucis SSL Windows
+        print(f"--> Appel LLM pour : {question}")
         response = await client.post(
             f"{LLM_BASE_URL}/chat/completions",
             headers={"Authorization": f"Bearer {LLM_API_KEY}"},
@@ -96,11 +100,11 @@ async def ask_llm(question: str, history: list = None) -> dict:
         )
         
         if response.status_code != 200:
-            print(f"Erreur API OpenAI: {response.text}")
-            response.raise_for_status()
+            err = f"Erreur OpenAI {response.status_code}: {response.text}"
+            log_error(err)
+            raise Exception(err)
 
         content = response.json()["choices"][0]["message"]["content"]
-        print(f"Réponse brute IA : {content}")
         return json.loads(content)
 
 class ChatMessage(BaseModel):
@@ -112,20 +116,21 @@ async def chat(msg: ChatMessage):
     try:
         llm_res = await ask_llm(msg.question, msg.history)
         sql = llm_res.get("sql")
-        expl = llm_res.get("explication", "Voici le résultat.")
+        expl = llm_res.get("explication", "Résultat trouvé.")
 
         if not sql:
             return {"answer": expl, "data": [], "sql": None, "count": 0}
 
         if not is_safe_query(sql):
-            raise HTTPException(status_code=400, detail="Requête SQL non autorisée.")
+            raise HTTPException(status_code=400, detail="SQL non autorisé.")
 
         data = execute_query(sql)
         return {"answer": expl, "data": data, "sql": sql, "count": len(data)}
 
     except Exception as e:
-        print("!!! CRASH DU SERVEUR !!!")
-        print(traceback.format_exc()) # Affiche l'erreur exacte dans ton terminal
+        err_stack = traceback.format_exc()
+        print("!!! ERREUR DETECTEE !!! Regardez debug_log.txt")
+        log_error(err_stack)
         raise HTTPException(status_code=500, detail=str(e))
 
 @app.get("/health")
@@ -136,6 +141,11 @@ def health():
     except Exception as e:
         return {"status": "error", "db": str(e)}
 
+@app.get("/")
+def serve_index():
+    return FileResponse("index.html")
+
 if __name__ == "__main__":
     import uvicorn
-    uvicorn.run("app:app", host="0.0.0.0", port=8000, reload=True)
+    # reload=False est plus stable pour débugger les erreurs 500 sur Windows
+    uvicorn.run("app:app", host="0.0.0.0", port=8000, reload=False)
