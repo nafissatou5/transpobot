@@ -1,9 +1,9 @@
 import os, re, json, traceback, httpx
 from datetime import datetime
 from dotenv import load_dotenv
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Request # Ajout de Request
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, JSONResponse # Ajout de JSONResponse
 from pydantic import BaseModel
 import mysql.connector
 
@@ -18,7 +18,7 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# ── Configuration (Récupérée du .env) ──────────────────────────────────────
+# ── Configuration ──────────────────────────────────────────────────────────
 DB_CONFIG = {
     "host":     os.getenv("DB_HOST", "localhost"),
     "user":     os.getenv("DB_USER", "root"),
@@ -26,11 +26,11 @@ DB_CONFIG = {
     "database": os.getenv("DB_NAME", "transpobot"),
 }
 
-LLM_API_KEY  = os.getenv("OPENAI_API_KEY") # Ta clé Groq gsk_...
+LLM_API_KEY  = os.getenv("OPENAI_API_KEY") 
 LLM_MODEL    = os.getenv("LLM_MODEL", "llama3-8b-8192")
 LLM_BASE_URL = os.getenv("LLM_BASE_URL", "https://api.groq.com/openai/v1")
 
-DB_SCHEMA = "Tables: vehicules, chauffeurs, lignes, tarifs, trajets, incidents."
+DB_SCHEMA = "Tables: vehicules, chauffeurs, lignes, trajets, incidents."
 
 # ── Fonctions ──────────────────────────────────────────────────────────────
 def execute_query(sql: str):
@@ -59,7 +59,7 @@ async def ask_llm(question: str):
         "messages": [
             {
                 "role": "system", 
-                "content": "You are a SQL expert. Output your response in JSON format. The JSON should contain two keys: 'sql' and 'explication'."
+                "content": "You are a SQL expert. Output your response in JSON format with 'sql' and 'explication' keys."
             },
             {"role": "user", "content": question}
         ],
@@ -67,16 +67,11 @@ async def ask_llm(question: str):
     }
     
     async with httpx.AsyncClient(timeout=20) as client:
-        print(f"--> Requête vers Groq...")
         resp = await client.post(f"{LLM_BASE_URL}/chat/completions", headers=headers, json=payload)
-        
         if resp.status_code != 200:
-            # On affiche l'erreur exacte de Groq dans le terminal pour debugger
-            print(f"DEBUG GROQ ERROR: {resp.text}")
-            raise Exception(f"Groq API Error: {resp.status_code}")
-            
-        content = resp.json()["choices"][0]["message"]["content"]
-        return json.loads(content)
+            print(f"ERREUR GROQ: {resp.text}")
+            raise Exception(f"Erreur API Groq: {resp.status_code}")
+        return json.loads(resp.json()["choices"][0]["message"]["content"])
 
 class ChatMessage(BaseModel):
     question: str
@@ -84,18 +79,31 @@ class ChatMessage(BaseModel):
 
 # ── Routes ─────────────────────────────────────────────────────────────────
 @app.post("/api/chat")
-async def chat(request: Request): # On utilise Request au lieu de ChatMessage
+async def chat(msg: ChatMessage): # Retour au modèle propre
     try:
-        # On lit le corps de la requête manuellement
-        body = await request.json()
-        question = body.get("question")
-        print(f"DEBUG: Question reçue -> {question}")
+        print(f"DEBUG: Question reçue -> {msg.question}")
         
-        # Test ultra simple sans IA pour voir si ça répond
-        return {"answer": f"J'ai bien reçu : {question}", "data": [], "sql": None}
+        # Appel réel à l'IA
+        res = await ask_llm(msg.question)
+        sql = res.get("sql")
+        
+        data = []
+        if sql and sql.strip().upper().startswith("SELECT"):
+            data = execute_query(sql)
+            
+        return {
+            "answer": res.get("explication", "Voici le résultat"),
+            "data": data, 
+            "sql": sql,
+            "count": len(data)
+        }
     except Exception as e:
-        print(f"ERREUR LECTURE JSON: {e}")
-        return JSONResponse(status_code=400, content={"error": "JSON invalide"})
+        print("!!! ERREUR SERVEUR !!!")
+        print(traceback.format_exc())
+        return JSONResponse(
+            status_code=500, 
+            content={"detail": str(e), "traceback": "Voir terminal"}
+        )
 
 @app.get("/api/stats")
 def get_stats():
@@ -107,5 +115,5 @@ def home():
 
 if __name__ == "__main__":
     import uvicorn
-    # Désactive le reload pour plus de stabilité pendant le débug
+    # Désactive le reload pour stabiliser MINGW64
     uvicorn.run(app, host="0.0.0.0", port=8000, reload=False)
