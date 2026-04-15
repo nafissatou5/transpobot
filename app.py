@@ -1,220 +1,57 @@
 """
-TranspoBot — Backend FastAPI FINAL STABLE
-Groq + MySQL + Text-to-SQL
-ESP / UCAD GLSI L3
+TranspoBot — Backend FastAPI complet
+Projet GLSi L3 — ESP/UCAD
+Version corrigée Groq + MySQL + Text-to-SQL
 """
 
 import os
-import re
 import json
-import traceback
-from datetime import datetime
-from decimal import Decimal
-from pathlib import Path
-from typing import List, Optional
-
-import httpx
 import mysql.connector
-from fastapi import FastAPI
+import httpx
+from dotenv import load_dotenv
+from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse, JSONResponse
-from pydantic import BaseModel
 
 # =====================================================
-# LOAD .ENV (FIX WINDOWS ^M BUG)
+# LOAD ENV
 # =====================================================
 
-env_path = Path(__file__).parent / ".env"
+load_dotenv()
 
-if env_path.exists():
-    with open(env_path, encoding="utf-8") as f:
-        for line in f.read().splitlines():
-            line = line.replace("\r", "").strip()
-            if line and not line.startswith("#") and "=" in line:
-                k, v = line.split("=", 1)
-                os.environ[k.strip()] = v.strip()
+DB_HOST = os.getenv("DB_HOST")
+DB_USER = os.getenv("DB_USER")
+DB_PASSWORD = os.getenv("DB_PASSWORD")
+DB_NAME = os.getenv("DB_NAME")
 
-print("GROQ_API_KEY =", repr(os.environ.get("GROQ_API_KEY")))
-
-# =====================================================
-# CONFIG
-# =====================================================
-
-LLM_API_KEY = os.getenv("GROQ_API_KEY", "")
-LLM_MODEL = os.getenv("LLM_MODEL", "llama3-8b-8192")
-
-# ✅ IMPORTANT — BASE URL CORRECTE
-LLM_BASE_URL = "https://api.groq.com/openai/v1/chat/completions"
-
-DB_CONFIG = {
-    "host": os.getenv("DB_HOST", "localhost"),
-    "user": os.getenv("DB_USER", "root"),
-    "password": os.getenv("DB_PASSWORD", ""),
-    "database": os.getenv("DB_NAME", "transpobot"),
-    "charset": "utf8mb4",
-}
-
-print("LLM OK:", bool(LLM_API_KEY))
+GROQ_API_KEY = os.getenv("GROQ_API_KEY")
+LLM_MODEL = os.getenv("LLM_MODEL")
+LLM_BASE_URL = os.getenv("LLM_BASE_URL")
 
 # =====================================================
 # FASTAPI
 # =====================================================
 
-app = FastAPI(title="TranspoBot API")
+app = FastAPI(title="TranspoBot")
 
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
+    allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
 
 # =====================================================
-# MODELS
+# DATABASE CONNECTION
 # =====================================================
 
-class ChatMessage(BaseModel):
-    question: str
-    history: Optional[List] = []
-
-# =====================================================
-# MYSQL
-# =====================================================
-
-def clean(v):
-    if isinstance(v, datetime):
-        return v.isoformat()
-    if isinstance(v, Decimal):
-        return float(v)
-    return v
-
-def execute_query(sql: str):
-
-    conn = mysql.connector.connect(**DB_CONFIG)
-    cur = conn.cursor(dictionary=True)
-
-    try:
-        cur.execute(sql)
-        rows = cur.fetchall()
-        return [{k: clean(v) for k, v in r.items()} for r in rows]
-    finally:
-        cur.close()
-        conn.close()
-
-# =====================================================
-# PROMPT
-# =====================================================
-
-def build_prompt():
-
-    today = datetime.now().strftime("%Y-%m-%d")
-
-    return f"""
-Tu es TranspoBot.
-
-DATE: {today}
-
-Réponds uniquement en JSON:
-
-{{"sql":"SELECT ...","explication":"texte"}}
-
-SELECT uniquement.
-LIMIT 100 obligatoire.
-"""
-
-# =====================================================
-# GROQ CALL
-# =====================================================
-
-async def call_llm(question: str, history=None):
-
-    if not LLM_API_KEY:
-        raise ValueError("GROQ_API_KEY manquant")
-
-    messages = [
-        {"role": "system", "content": build_prompt()},
-        {"role": "user", "content": question},
-    ]
-
-    async with httpx.AsyncClient(timeout=40) as client:
-
-        r = await client.post(
-            LLM_BASE_URL,
-            headers={
-                "Authorization": f"Bearer {LLM_API_KEY}",
-                "Content-Type": "application/json",
-            },
-            json={
-                "model": LLM_MODEL,
-                "messages": messages,
-                "temperature": 0,
-            },
-        )
-
-    print("GROQ STATUS:", r.status_code)
-
-    if r.status_code != 200:
-        print(r.text)
-        r.raise_for_status()
-
-    content = r.json()["choices"][0]["message"]["content"]
-
-    content = re.sub(r"```json|```", "", content).strip()
-
-    try:
-        return json.loads(content)
-    except:
-        return {"sql": None, "explication": content}
-
-# =====================================================
-# SECURITY SQL
-# =====================================================
-
-FORBIDDEN = re.compile(
-    r"\b(INSERT|UPDATE|DELETE|DROP|ALTER|CREATE|TRUNCATE)\b",
-    re.I,
-)
-
-# =====================================================
-# CHAT API
-# =====================================================
-
-@app.post("/api/chat")
-async def chat(msg: ChatMessage):
-
-    try:
-
-        result = await call_llm(msg.question)
-
-        sql = result.get("sql")
-        explanation = result.get("explication", "")
-
-        if not sql:
-            return {"answer": explanation, "data": []}
-
-        if FORBIDDEN.search(sql):
-            return JSONResponse(
-                status_code=400,
-                content={"detail": "Requête interdite"},
-            )
-
-        data = execute_query(sql)
-
-        return {
-            "answer": explanation,
-            "sql": sql,
-            "data": data,
-            "count": len(data),
-        }
-
-    except Exception as e:
-
-        print(traceback.format_exc())
-
-        return JSONResponse(
-            status_code=500,
-            content={"detail": str(e)},
-        )
+def get_db():
+    return mysql.connector.connect(
+        host=DB_HOST,
+        user=DB_USER,
+        password=DB_PASSWORD,
+        database=DB_NAME,
+    )
 
 # =====================================================
 # HEALTH CHECK
@@ -223,14 +60,13 @@ async def chat(msg: ChatMessage):
 @app.get("/health")
 def health():
     try:
-        execute_query("SELECT 1")
+        db = get_db()
+        db.close()
 
         return {
             "status": "ok",
             "app": "TranspoBot",
-            "db": "connected",
-            "llm": bool(LLM_API_KEY),
-            "model": LLM_MODEL,
+            "db": "connected"
         }
 
     except Exception as e:
@@ -240,19 +76,80 @@ def health():
         }
 
 # =====================================================
-# ROOT
+# GROQ CALL
 # =====================================================
 
-@app.get("/")
-def root():
-    if os.path.exists("index.html"):
-        return FileResponse("index.html")
-    return {"message": "TranspoBot running"}
+async def call_llm(prompt: str):
+
+    url = f"{LLM_BASE_URL}/chat/completions"
+
+    headers = {
+        "Authorization": f"Bearer {GROQ_API_KEY}",
+        "Content-Type": "application/json",
+    }
+
+    payload = {
+        "model": LLM_MODEL,
+        "messages": [
+            {"role": "system", "content": "You are a SQL assistant."},
+            {"role": "user", "content": prompt},
+        ],
+        "temperature": 0,
+    }
+
+    async with httpx.AsyncClient(timeout=60) as client:
+        response = await client.post(
+            url,
+            headers=headers,
+            json=payload
+        )
+
+    if response.status_code != 200:
+        raise HTTPException(
+            status_code=500,
+            detail=response.text
+        )
+
+    data = response.json()
+
+    return data["choices"][0]["message"]["content"]
 
 # =====================================================
-# RUN
+# CHAT ENDPOINT
 # =====================================================
 
-if __name__ == "__main__":
-    import uvicorn
-    uvicorn.run("app:app", reload=True)
+@app.post("/chat")
+async def chat(question: dict):
+
+    user_question = question.get("question")
+
+    if not user_question:
+        raise HTTPException(status_code=400, detail="Question missing")
+
+    # 1️⃣ Generate SQL from LLM
+    sql_query = await call_llm(
+        f"Convert this question into MySQL query:\n{user_question}"
+    )
+
+    # nettoyage
+    sql_query = sql_query.replace("```sql", "").replace("```", "").strip()
+
+    # 2️⃣ Execute SQL
+    try:
+        db = get_db()
+        cursor = db.cursor(dictionary=True)
+
+        cursor.execute(sql_query)
+        results = cursor.fetchall()
+
+        cursor.close()
+        db.close()
+
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+    return {
+        "question": user_question,
+        "sql": sql_query,
+        "results": results
+    }
