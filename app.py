@@ -39,30 +39,43 @@ class ChatMessage(BaseModel):
 
 # --- Fonction LLM ---
 async def ask_llm(question: str):
-    headers = {"Authorization": f"Bearer {LLM_API_KEY}"}
+    headers = {
+        "Authorization": f"Bearer {LLM_API_KEY}",
+        "Content-Type": "application/json"
+    }
     
-    # GROQ exige le mot "json" dans le message système pour accepter le format json_object
+    # Correction cruciale pour Groq : 
+    # 1. Le mot 'json' doit être dans le system prompt.
+    # 2. On demande explicitement un objet avec les clés attendues.
     payload = {
         "model": LLM_MODEL,
         "messages": [
             {
                 "role": "system", 
-                "content": "You are a SQL expert. You must respond using JSON. Output a JSON object with keys 'sql' and 'explication'."
+                "content": "You are a helpful assistant that outputs JSON. Your response must be a valid JSON object with two keys: 'sql' (a MySQL query) and 'explication' (a brief sentence in French)."
             },
-            {"role": "user", "content": question}
+            {
+                "role": "user", 
+                "content": f"Generate a SQL query for the following request: {question}"
+            }
         ],
         "response_format": {"type": "json_object"},
-        "temperature": 0
+        "temperature": 0 # Plus stable pour du SQL
     }
     
     async with httpx.AsyncClient(timeout=20) as client:
+        print(f"--> Envoi de la requête à Groq ({LLM_MODEL})...")
         resp = await client.post(f"{LLM_BASE_URL}/chat/completions", headers=headers, json=payload)
         
+        # Si Groq renvoie une erreur (comme la 400), on l'affiche ici :
         if resp.status_code != 200:
-            print(f"DEBUG GROQ ERROR: {resp.text}") # Ceci s'affichera dans ton terminal
-            raise HTTPException(status_code=resp.status_code, detail=f"Groq: {resp.text}")
+            print(f"!!! ERREUR GROQ DÉTAILLÉE : {resp.text}")
+            raise Exception(f"Erreur Groq {resp.status_code}: {resp.text}")
             
-        return json.loads(resp.json()["choices"][0]["message"]["content"])
+        result = resp.json()
+        content = result["choices"][0]["message"]["content"]
+        print(f"--> Réponse reçue de Groq : {content}")
+        return json.loads(content)
 
 # --- Fonction DB ---
 def execute_query(sql: str):
