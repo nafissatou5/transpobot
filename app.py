@@ -126,6 +126,7 @@ async def ask_llm(question: str):
         "temperature": 0
     }
 
+    print("API KEY USED:", LLM_API_KEY[:6], "...")
     async with httpx.AsyncClient(timeout=30) as client:
 
         print("➡️ Appel Groq...")
