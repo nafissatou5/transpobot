@@ -81,27 +81,18 @@ class ChatMessage(BaseModel):
 
 # ── Routes ─────────────────────────────────────────────────────────────────
 @app.post("/api/chat")
-async def chat(msg: ChatMessage):
+async def chat(request: Request): # On utilise Request au lieu de ChatMessage
     try:
-        print(f"Question reçue : {msg.question}")
-        res = await ask_llm(msg.question)
-        sql = res.get("sql")
+        # On lit le corps de la requête manuellement
+        body = await request.json()
+        question = body.get("question")
+        print(f"DEBUG: Question reçue -> {question}")
         
-        data = []
-        if sql and "SELECT" in sql.upper():
-            data = execute_query(sql)
-            
-        return {
-            "answer": res.get("explication", "Voici le résultat"),
-            "data": data,
-            "sql": sql,
-            "count": len(data)
-        }
+        # Test ultra simple sans IA pour voir si ça répond
+        return {"answer": f"J'ai bien reçu : {question}", "data": [], "sql": None}
     except Exception as e:
-        print("!!! ERREUR !!!")
-        print(traceback.format_exc())
-        # On renvoie l'erreur proprement au lieu de crasher le serveur
-        return {"answer": f"Erreur technique : {str(e)}", "data": [], "sql": None}
+        print(f"ERREUR LECTURE JSON: {e}")
+        return JSONResponse(status_code=400, content={"error": "JSON invalide"})
 
 @app.get("/api/stats")
 def get_stats():
