@@ -69,12 +69,19 @@ DB_CONFIG = {
 # =====================================================
 # Configuration LLM (Groq)
 # =====================================================
-LLM_API_KEY = os.getenv("GROQ_API_KEY")
+
+LLM_API_KEY = (
+    os.getenv("GROQ_API_KEY")
+    or os.getenv("OPENAI_API_KEY")
+)
 
 if not LLM_API_KEY:
-    raise RuntimeError("❌ GROQ_API_KEY non détectée dans .env")
+    raise RuntimeError("❌ Aucune clé API trouvée dans .env")
+
+LLM_API_KEY = LLM_API_KEY.strip()
 
 LLM_MODEL = os.getenv("LLM_MODEL", "llama3-8b-8192")
+
 LLM_BASE_URL = os.getenv(
     "LLM_BASE_URL",
     "https://api.groq.com/openai/v1"
