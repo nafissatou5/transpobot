@@ -220,16 +220,22 @@ async def chat(msg: ChatMessage):
 
 @app.get("/health")
 def health():
-
     try:
         execute_query("SELECT 1")
+
         return {
             "status": "ok",
+            "app": "TranspoBot",
             "db": "connected",
             "llm": bool(LLM_API_KEY),
+            "model": LLM_MODEL,
         }
+
     except Exception as e:
-        return {"status": "error", "db": str(e)}
+        return {
+            "status": "error",
+            "db": str(e)
+        }
 
 # =====================================================
 # ROOT
