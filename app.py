@@ -1,7 +1,7 @@
 """
 TranspoBot — Backend FastAPI complet
 Projet GLSi L3 — ESP/UCAD
-Version corrigée Groq + MySQL + Text-to-SQL
+Version stable Groq + MySQL + Text-to-SQL
 """
 
 import os
@@ -10,6 +10,7 @@ import traceback
 import httpx
 from datetime import datetime
 from typing import List, Optional
+from pathlib import Path
 
 from dotenv import load_dotenv
 from fastapi import FastAPI
@@ -18,16 +19,20 @@ from fastapi.responses import FileResponse, JSONResponse
 from pydantic import BaseModel
 import mysql.connector
 
-# ===============================
-# Charger variables environnement
-# ===============================
-load_dotenv()
 
-print("GROQ KEY =", os.getenv("GROQ_API_KEY"))
+# =====================================================
+# Chargement GARANTI du .env (FIX WINDOWS IMPORTANT)
+# =====================================================
+env_path = Path(__file__).resolve().parent / ".env"
+load_dotenv(dotenv_path=env_path)
 
-# ===============================
+print("ENV PATH:", env_path)
+print("GROQ_API_KEY =", os.getenv("GROQ_API_KEY"))
+
+
+# =====================================================
 # App FastAPI
-# ===============================
+# =====================================================
 app = FastAPI(title="TranspoBot Groq")
 
 app.add_middleware(
@@ -37,9 +42,10 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# ===============================
+
+# =====================================================
 # Configuration DB
-# ===============================
+# =====================================================
 DB_CONFIG = {
     "host": os.getenv("DB_HOST", "localhost"),
     "user": os.getenv("DB_USER", "root"),
@@ -47,31 +53,37 @@ DB_CONFIG = {
     "database": os.getenv("DB_NAME", "transpobot"),
 }
 
-# ===============================
-# Configuration LLM (Groq)
-# ===============================
-LLM_API_KEY = os.getenv("GROQ_API_KEY")
-LLM_MODEL = os.getenv("LLM_MODEL", "llama3-8b-8192")
-LLM_BASE_URL = os.getenv("LLM_BASE_URL", "https://api.groq.com/openai/v1")
 
-# ===============================
+# =====================================================
+# Configuration LLM (Groq)
+# =====================================================
+LLM_API_KEY = os.getenv("GROQ_API_KEY")
+
+if not LLM_API_KEY:
+    raise RuntimeError("❌ GROQ_API_KEY non détectée dans .env")
+
+LLM_MODEL = os.getenv("LLM_MODEL", "llama3-8b-8192")
+LLM_BASE_URL = os.getenv(
+    "LLM_BASE_URL",
+    "https://api.groq.com/openai/v1"
+)
+
+
+# =====================================================
 # Modèle requête
-# ===============================
+# =====================================================
 class ChatMessage(BaseModel):
     question: str
     history: Optional[List] = []
 
 
-# ===============================
+# =====================================================
 # Appel LLM Groq
-# ===============================
+# =====================================================
 async def ask_llm(question: str):
 
-    if not LLM_API_KEY:
-        raise Exception("GROQ_API_KEY manquante dans .env")
-
     headers = {
-        "Authorization": f"Bearer {LLM_API_KEY}",
+        "Authorization": f"Bearer {LLM_API_KEY.strip()}",
         "Content-Type": "application/json"
     }
 
@@ -82,12 +94,9 @@ async def ask_llm(question: str):
                 "role": "system",
                 "content": (
                     "You are a Text-to-SQL assistant.\n"
-                    "Return ONLY a valid JSON object.\n"
+                    "Return ONLY valid JSON.\n"
                     "Format:\n"
-                    "{\n"
-                    "  \"sql\": \"SQL QUERY\",\n"
-                    "  \"explication\": \"French explanation\"\n"
-                    "}"
+                    "{\"sql\":\"SQL QUERY\",\"explication\":\"French explanation\"}"
                 )
             },
             {
@@ -108,18 +117,24 @@ async def ask_llm(question: str):
         )
 
         print("STATUS:", resp.status_code)
-        print("RAW RESPONSE:", resp.text)
+        print("RAW:", resp.text)
 
         resp.raise_for_status()
 
         content = resp.json()["choices"][0]["message"]["content"]
 
-        return json.loads(content)
+        # sécurise JSON LLM
+        try:
+            return json.loads(content)
+        except:
+            start = content.find("{")
+            end = content.rfind("}") + 1
+            return json.loads(content[start:end])
 
 
-# ===============================
+# =====================================================
 # Exécution SQL
-# ===============================
+# =====================================================
 def execute_query(sql: str):
 
     conn = mysql.connector.connect(**DB_CONFIG)
@@ -129,7 +144,6 @@ def execute_query(sql: str):
         cursor.execute(sql)
         results = cursor.fetchall()
 
-        # convertir datetime → JSON
         for row in results:
             for k, v in row.items():
                 if isinstance(v, datetime):
@@ -142,14 +156,14 @@ def execute_query(sql: str):
         conn.close()
 
 
-# ===============================
-# Route Chat principale
-# ===============================
+# =====================================================
+# Route Chat
+# =====================================================
 @app.post("/api/chat")
 async def chat(msg: ChatMessage):
 
     try:
-        print(f"QUESTION : {msg.question}")
+        print("QUESTION:", msg.question)
 
         llm_response = await ask_llm(msg.question)
 
@@ -173,17 +187,17 @@ async def chat(msg: ChatMessage):
         )
 
 
-# ===============================
+# =====================================================
 # Page accueil
-# ===============================
+# =====================================================
 @app.get("/")
 def home():
     return FileResponse("index.html")
 
 
-# ===============================
+# =====================================================
 # Lancement serveur
-# ===============================
+# =====================================================
 if __name__ == "__main__":
     import uvicorn
     uvicorn.run(app, host="0.0.0.0", port=8000, reload=False)
