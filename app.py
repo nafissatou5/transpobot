@@ -147,5 +147,5 @@ def serve_index():
 
 if __name__ == "__main__":
     import uvicorn
-    # reload=False est plus stable pour débugger les erreurs 500 sur Windows
-    uvicorn.run("app:app", host="0.0.0.0", port=8000, reload=False)
+    # On force log_level à debug et on désactive le reload
+    uvicorn.run(app, host="127.0.0.1", port=8000, log_level="debug", reload=False)
