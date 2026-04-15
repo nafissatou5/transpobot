@@ -53,24 +53,27 @@ def execute_query(sql: str):
         conn.close()
 
 async def ask_llm(question: str):
-    # Important : On utilise l'URL et la clé du .env
     headers = {"Authorization": f"Bearer {LLM_API_KEY}"}
     payload = {
         "model": LLM_MODEL,
         "messages": [
-            {"role": "system", "content": f"Tu es un expert SQL. Réponds en JSON strict : {{\"sql\": \"...\", \"explication\": \"...\"}}. Schema: {DB_SCHEMA}"},
+            {
+                "role": "system", 
+                "content": "You are a SQL expert. Output your response in JSON format. The JSON should contain two keys: 'sql' and 'explication'."
+            },
             {"role": "user", "content": question}
         ],
         "response_format": {"type": "json_object"}
     }
     
     async with httpx.AsyncClient(timeout=20) as client:
-        print(f"--> Envoi à Groq ({LLM_MODEL})...")
+        print(f"--> Requête vers Groq...")
         resp = await client.post(f"{LLM_BASE_URL}/chat/completions", headers=headers, json=payload)
         
         if resp.status_code != 200:
-            print(f"Erreur API : {resp.text}")
-            raise Exception(f"API Error {resp.status_code}")
+            # On affiche l'erreur exacte de Groq dans le terminal pour debugger
+            print(f"DEBUG GROQ ERROR: {resp.text}")
+            raise Exception(f"Groq API Error: {resp.status_code}")
             
         content = resp.json()["choices"][0]["message"]["content"]
         return json.loads(content)
