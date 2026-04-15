@@ -34,6 +34,8 @@ if env_path.exists():
                 k, v = line.split("=", 1)
                 os.environ[k.strip()] = v.strip()
 
+print("GROQ_API_KEY =", repr(os.environ.get("GROQ_API_KEY")))
+
 # =====================================================
 # CONFIG
 # =====================================================
