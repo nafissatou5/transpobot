@@ -1,7 +1,7 @@
 """
 TranspoBot — Backend FastAPI complet
 Projet GLSi L3 — ESP/UCAD
-Version stable Groq + MySQL + Text-to-SQL
+Version stable Groq + MySQL + Text-to-SQL 
 """
 
 import os
@@ -21,29 +21,39 @@ import mysql.connector
 
 
 # =====================================================
-# Chargement GARANTI du .env
+# Chargement .env (ROBUSTE)
 # =====================================================
 env_path = Path(__file__).resolve().parent / ".env"
-load_dotenv(dotenv_path=env_path)
 
-# DEBUG : On affiche si les clés sont bien chargées
-LLM_API_KEY = os.getenv("GROQ_API_KEY") or os.getenv("OPENAI_API_KEY") 
+if not env_path.exists():
+    raise RuntimeError("❌ Fichier .env introuvable")
 
-print(f"--- DEBUG CONFIG ---")
-print(f"Fichier .env cherché ici : {env_path}")
-print(f"Fichier existe ? : {env_path.exists()}")
-if LLM_API_KEY:
-    print(f"GROQ_API_KEY trouvée : {LLM_API_KEY[:7]}***") # Affiche juste le début pour sécurité
-else:
-    print(f"❌ ERREUR : GROQ_API_KEY est VIDE !")
-print(f"--------------------")
-
-if not LLM_API_KEY:
-    raise RuntimeError("La clé API n'est pas chargée. Vérifiez votre fichier .env")
+load_dotenv(env_path, override=True)
 
 
 # =====================================================
-# App FastAPI
+# CONFIG LLM (UNE SEULE SOURCE)
+# =====================================================
+LLM_API_KEY = (os.getenv("GROQ_API_KEY") or "").strip()
+
+if not LLM_API_KEY:
+    raise RuntimeError("❌ GROQ_API_KEY manquante ou vide dans .env")
+
+LLM_MODEL = os.getenv("LLM_MODEL", "llama3-8b-8192")
+
+LLM_BASE_URL = os.getenv(
+    "LLM_BASE_URL",
+    "https://api.groq.com/openai/v1"
+)
+
+print("--- DEBUG CONFIG ---")
+print("ENV GROQ OK :", bool(LLM_API_KEY))
+print("KEY PREVIEW :", LLM_API_KEY[:8] + "...")
+print("--------------------")
+
+
+# =====================================================
+# APP FASTAPI
 # =====================================================
 app = FastAPI(title="TranspoBot Groq")
 
@@ -56,7 +66,7 @@ app.add_middleware(
 
 
 # =====================================================
-# Configuration DB
+# CONFIG DATABASE
 # =====================================================
 DB_CONFIG = {
     "host": os.getenv("DB_HOST", "localhost"),
@@ -67,29 +77,7 @@ DB_CONFIG = {
 
 
 # =====================================================
-# Configuration LLM (Groq)
-# =====================================================
-
-LLM_API_KEY = (
-    os.getenv("GROQ_API_KEY")
-    or os.getenv("OPENAI_API_KEY")
-)
-
-if not LLM_API_KEY:
-    raise RuntimeError("❌ Aucune clé API trouvée dans .env")
-
-LLM_API_KEY = LLM_API_KEY.strip()
-
-LLM_MODEL = os.getenv("LLM_MODEL", "llama3-8b-8192")
-
-LLM_BASE_URL = os.getenv(
-    "LLM_BASE_URL",
-    "https://api.groq.com/openai/v1"
-)
-
-
-# =====================================================
-# Modèle requête
+# MODELE REQUETE
 # =====================================================
 class ChatMessage(BaseModel):
     question: str
@@ -97,12 +85,12 @@ class ChatMessage(BaseModel):
 
 
 # =====================================================
-# Appel LLM Groq
+# APPEL LLM GROQ
 # =====================================================
 async def ask_llm(question: str):
 
     headers = {
-        "Authorization": f"Bearer {LLM_API_KEY.strip()}",
+        "Authorization": "Bearer " + LLM_API_KEY,
         "Content-Type": "application/json"
     }
 
@@ -126,10 +114,9 @@ async def ask_llm(question: str):
         "temperature": 0
     }
 
-    print("API KEY USED:", LLM_API_KEY[:6], "...")
-    async with httpx.AsyncClient(timeout=30) as client:
+    print("➡️ Appel Groq...")
 
-        print("➡️ Appel Groq...")
+    async with httpx.AsyncClient(timeout=30) as client:
         resp = await client.post(
             f"{LLM_BASE_URL}/chat/completions",
             headers=headers,
@@ -143,17 +130,16 @@ async def ask_llm(question: str):
 
         content = resp.json()["choices"][0]["message"]["content"]
 
-        # sécurise JSON LLM
         try:
             return json.loads(content)
-        except:
+        except Exception:
             start = content.find("{")
             end = content.rfind("}") + 1
             return json.loads(content[start:end])
 
 
 # =====================================================
-# Exécution SQL
+# EXECUTION SQL
 # =====================================================
 def execute_query(sql: str):
 
@@ -177,7 +163,7 @@ def execute_query(sql: str):
 
 
 # =====================================================
-# Route Chat
+# ROUTE CHAT
 # =====================================================
 @app.post("/api/chat")
 async def chat(msg: ChatMessage):
@@ -208,7 +194,7 @@ async def chat(msg: ChatMessage):
 
 
 # =====================================================
-# Page accueil
+# HOME PAGE
 # =====================================================
 @app.get("/")
 def home():
@@ -216,8 +202,8 @@ def home():
 
 
 # =====================================================
-# Lancement serveur
+# RUN SERVER
 # =====================================================
 if __name__ == "__main__":
     import uvicorn
-    uvicorn.run(app, host="0.0.0.0", port=8000, reload=False)
+    uvicorn.run(app, host="0.0.0.0", port=8000)
