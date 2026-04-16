@@ -1,23 +1,76 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <title>TranspoBot Chat IA</title>
+  <style>
+    body {
+      background: #0f172a;
+      color: white;
+      font-family: Arial;
+      padding: 20px;
+    }
+
+    #chat-messages {
+      border: 1px solid #334155;
+      padding: 10px;
+      height: 400px;
+      overflow-y: auto;
+      margin-bottom: 10px;
+    }
+
+    input {
+      padding: 10px;
+      width: 70%;
+    }
+
+    button {
+      padding: 10px;
+      cursor: pointer;
+    }
+
+    table {
+      border-collapse: collapse;
+      margin-top: 10px;
+    }
+
+    th, td {
+      border: 1px solid #444;
+      padding: 5px;
+    }
+
+    th {
+      background: #1e293b;
+    }
+  </style>
+</head>
+
+<body>
+
+<h2>Assistant IA TranspoBot</h2>
+
+<div id="chat-messages"></div>
+
+<input id="chat-input" placeholder="Pose ta question">
+<button onclick="sendChat()">Envoyer</button>
+
 <script>
 const API = "https://transpobot-api-nq6r.onrender.com";
 
 function renderTable(data) {
   if (!data || data.length === 0) return "";
 
-  let html = "<table style='border-collapse:collapse;margin-top:10px'>";
-  
-  // headers
+  let html = "<table>";
+
   html += "<tr>";
   Object.keys(data[0]).forEach(key => {
-    html += `<th style='border:1px solid #444;padding:5px;background:#1e293b'>${key}</th>`;
+    html += `<th>${key}</th>`;
   });
   html += "</tr>";
 
-  // rows
   data.forEach(row => {
     html += "<tr>";
     Object.values(row).forEach(val => {
-      html += `<td style='border:1px solid #444;padding:5px'>${val}</td>`;
+      html += `<td>${val}</td>`;
     });
     html += "</tr>";
   });
@@ -49,17 +102,14 @@ async function sendChat() {
 
     document.getElementById("loading").remove();
 
-    // 1. réponse IA
     chat.innerHTML += `<p><b>Bot:</b> ${data.answer}</p>`;
 
-    // 2. SQL (debug utile pour prof)
     if (data.sql) {
       chat.innerHTML += `<p style="color:#38bdf8"><b>SQL:</b> ${data.sql}</p>`;
     }
 
-    // 3. résultat base de données (IMPORTANT)
     if (data.data && data.data.length > 0) {
-      chat.innerHTML += `<div style="margin-top:10px;color:#22c55e">
+      chat.innerHTML += `<div style="color:#22c55e">
         <b>Résultat:</b>
         ${renderTable(data.data)}
       </div>`;
@@ -71,3 +121,6 @@ async function sendChat() {
   }
 }
 </script>
+
+</body>
+</html>
