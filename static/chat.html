@@ -1,19 +1,30 @@
-<!DOCTYPE html>
-<html>
-<head>
-  <title>TranspoBot Chat IA</title>
-</head>
-<body style="background:#0f172a;color:white;font-family:Arial">
-
-<h2>Assistant IA TranspoBot</h2>
-
-<div id="chat-messages"></div>
-
-<input id="chat-input" placeholder="Pose ta question">
-<button onclick="sendChat()">Envoyer</button>
-
 <script>
 const API = "https://transpobot-api-nq6r.onrender.com";
+
+function renderTable(data) {
+  if (!data || data.length === 0) return "";
+
+  let html = "<table style='border-collapse:collapse;margin-top:10px'>";
+  
+  // headers
+  html += "<tr>";
+  Object.keys(data[0]).forEach(key => {
+    html += `<th style='border:1px solid #444;padding:5px;background:#1e293b'>${key}</th>`;
+  });
+  html += "</tr>";
+
+  // rows
+  data.forEach(row => {
+    html += "<tr>";
+    Object.values(row).forEach(val => {
+      html += `<td style='border:1px solid #444;padding:5px'>${val}</td>`;
+    });
+    html += "</tr>";
+  });
+
+  html += "</table>";
+  return html;
+}
 
 async function sendChat() {
   const input = document.getElementById("chat-input");
@@ -38,13 +49,25 @@ async function sendChat() {
 
     document.getElementById("loading").remove();
 
+    // 1. réponse IA
     chat.innerHTML += `<p><b>Bot:</b> ${data.answer}</p>`;
+
+    // 2. SQL (debug utile pour prof)
+    if (data.sql) {
+      chat.innerHTML += `<p style="color:#38bdf8"><b>SQL:</b> ${data.sql}</p>`;
+    }
+
+    // 3. résultat base de données (IMPORTANT)
+    if (data.data && data.data.length > 0) {
+      chat.innerHTML += `<div style="margin-top:10px;color:#22c55e">
+        <b>Résultat:</b>
+        ${renderTable(data.data)}
+      </div>`;
+    }
+
   } catch (e) {
     document.getElementById("loading").remove();
     chat.innerHTML += `<p style="color:red">Erreur serveur</p>`;
   }
 }
 </script>
-
-</body>
-</html>
