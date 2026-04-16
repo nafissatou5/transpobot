@@ -1,0 +1,479 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>TranspoBot — Gestion Transport Urbain</title>
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+body{font-family:'Segoe UI',Arial,sans-serif;background:#0f172a;color:#e2e8f0;min-height:100vh}
+
+/* ── SIDEBAR ── */
+.sidebar{position:fixed;left:0;top:0;width:220px;height:100vh;background:#0f172a;border-right:1px solid #1e293b;padding:0;z-index:100;display:flex;flex-direction:column}
+.logo{padding:20px 16px;border-bottom:1px solid #1e293b;display:flex;align-items:center;gap:10px}
+.logo-icon{width:36px;height:36px;background:#1d4ed8;border-radius:8px;display:flex;align-items:center;justify-content:center;font-size:18px;flex-shrink:0}
+.logo h1{font-size:16px;font-weight:700;color:#fff}
+.logo p{font-size:11px;color:#64748b}
+nav{padding:12px 0;flex:1}
+.nav-item{display:flex;align-items:center;gap:10px;padding:10px 16px;cursor:pointer;color:#94a3b8;font-size:13px;border-left:3px solid transparent;transition:all .15s}
+.nav-item:hover{background:#1e293b;color:#e2e8f0}
+.nav-item.active{border-left-color:#3b82f6;background:#1e293b;color:#60a5fa}
+.nav-icon{font-size:16px;width:20px;text-align:center}
+
+/* ── MAIN ── */
+.main{margin-left:220px;min-height:100vh;padding:24px}
+.page{display:none}
+.page.active{display:block}
+.page-title{font-size:22px;font-weight:700;color:#f1f5f9;margin-bottom:6px}
+.page-sub{font-size:13px;color:#64748b;margin-bottom:24px}
+
+/* ── KPI CARDS ── */
+.kpi-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:12px;margin-bottom:24px}
+.kpi{background:#1e293b;border-radius:10px;padding:16px;border:1px solid #334155}
+.kpi-label{font-size:11px;color:#64748b;text-transform:uppercase;letter-spacing:.5px;margin-bottom:6px}
+.kpi-value{font-size:26px;font-weight:700;color:#f1f5f9}
+.kpi-sub{font-size:11px;color:#94a3b8;margin-top:4px}
+.kpi.blue .kpi-value{color:#60a5fa}
+.kpi.green .kpi-value{color:#4ade80}
+.kpi.amber .kpi-value{color:#fbbf24}
+.kpi.red .kpi-value{color:#f87171}
+.kpi.purple .kpi-value{color:#a78bfa}
+
+/* ── TABLES ── */
+.table-card{background:#1e293b;border-radius:10px;border:1px solid #334155;overflow:hidden;margin-bottom:20px}
+.table-header{padding:14px 18px;border-bottom:1px solid #334155;display:flex;align-items:center;justify-content:space-between}
+.table-header h3{font-size:14px;font-weight:600;color:#e2e8f0}
+.table-wrap{overflow-x:auto}
+table{width:100%;border-collapse:collapse;font-size:13px}
+th{background:#0f172a;color:#64748b;padding:10px 14px;text-align:left;font-size:11px;text-transform:uppercase;letter-spacing:.5px;white-space:nowrap}
+td{padding:10px 14px;border-bottom:1px solid #1e293b;color:#cbd5e1}
+tr:last-child td{border-bottom:none}
+tr:hover td{background:#1e293b}
+
+/* ── BADGES ── */
+.badge{display:inline-block;padding:2px 8px;border-radius:20px;font-size:11px;font-weight:600}
+.badge-green{background:#166534;color:#4ade80}
+.badge-amber{background:#92400e;color:#fbbf24}
+.badge-red{background:#7f1d1d;color:#f87171}
+.badge-blue{background:#1e3a5f;color:#60a5fa}
+.badge-gray{background:#334155;color:#94a3b8}
+.badge-purple{background:#4c1d95;color:#a78bfa}
+
+/* ── CHAT ── */
+.chat-layout{display:grid;grid-template-columns:1fr 320px;gap:16px;height:calc(100vh - 140px)}
+.chat-main{display:flex;flex-direction:column;background:#1e293b;border-radius:10px;border:1px solid #334155;overflow:hidden}
+.chat-messages{flex:1;overflow-y:auto;padding:16px;display:flex;flex-direction:column;gap:12px}
+.msg{max-width:85%;padding:10px 14px;border-radius:10px;font-size:13px;line-height:1.6}
+.msg.user{background:#1d4ed8;color:#fff;align-self:flex-end;border-radius:10px 10px 2px 10px}
+.msg.bot{background:#0f172a;color:#cbd5e1;align-self:flex-start;border-radius:10px 10px 10px 2px}
+.msg.bot .sql-block{background:#020617;border-radius:6px;padding:10px;margin-top:8px;font-family:'Courier New',monospace;font-size:11px;color:#a5f3fc;white-space:pre-wrap;word-break:break-all}
+.msg.bot .result-table-wrap{overflow-x:auto;margin-top:8px}
+.msg.bot .result-table{width:100%;font-size:11px;border-collapse:collapse}
+.msg.bot .result-table th{background:#1e293b;color:#64748b;padding:5px 8px;text-align:left;font-size:10px}
+.msg.bot .result-table td{padding:5px 8px;border-bottom:1px solid #1e293b;color:#94a3b8}
+.chat-input-row{padding:12px;border-top:1px solid #334155;display:flex;gap:8px}
+.chat-input-row input{flex:1;background:#0f172a;border:1px solid #334155;border-radius:8px;padding:10px 14px;color:#e2e8f0;font-size:13px;outline:none}
+.chat-input-row input:focus{border-color:#3b82f6}
+.chat-input-row button{background:#1d4ed8;color:#fff;border:none;border-radius:8px;padding:10px 16px;cursor:pointer;font-size:13px;font-weight:600;white-space:nowrap}
+.chat-input-row button:hover{background:#2563eb}
+.chat-input-row button:disabled{opacity:.5;cursor:not-allowed}
+.typing{display:flex;gap:4px;padding:12px 14px;background:#0f172a;border-radius:10px;align-self:flex-start}
+.typing span{width:6px;height:6px;border-radius:50%;background:#64748b;animation:bounce .8s infinite}
+.typing span:nth-child(2){animation-delay:.2s}
+.typing span:nth-child(3){animation-delay:.4s}
+@keyframes bounce{0%,80%,100%{transform:translateY(0)}40%{transform:translateY(-6px)}}
+
+/* ── CHAT SIDEBAR ── */
+.chat-sidebar{background:#1e293b;border-radius:10px;border:1px solid #334155;padding:16px;overflow-y:auto}
+.chat-sidebar h4{font-size:12px;color:#64748b;text-transform:uppercase;letter-spacing:.5px;margin-bottom:12px}
+.suggestion{background:#0f172a;border:1px solid #334155;border-radius:8px;padding:10px 12px;cursor:pointer;font-size:12px;color:#94a3b8;margin-bottom:6px;transition:all .15s;line-height:1.4}
+.suggestion:hover{border-color:#3b82f6;color:#60a5fa;background:#1e3a5f}
+
+/* ── LOADING ── */
+.loading{display:flex;align-items:center;justify-content:center;padding:40px;color:#64748b;font-size:13px;gap:8px}
+.spin{width:16px;height:16px;border:2px solid #334155;border-top-color:#3b82f6;border-radius:50%;animation:spin .8s linear infinite}
+@keyframes spin{to{transform:rotate(360deg)}}
+
+/* ── SCROLLBAR ── */
+::-webkit-scrollbar{width:5px}
+::-webkit-scrollbar-track{background:#0f172a}
+::-webkit-scrollbar-thumb{background:#334155;border-radius:3px}
+</style>
+</head>
+<body>
+
+<!-- SIDEBAR -->
+<nav class="sidebar">
+  <div class="logo">
+    <div class="logo-icon">🚌</div>
+    <div><h1>TranspoBot</h1><p>Transport Urbain IA</p></div>
+  </div>
+  <nav>
+    <div class="nav-item active" onclick="showPage('dashboard')"><span class="nav-icon">📊</span> Tableau de bord</div>
+    <div class="nav-item" onclick="showPage('vehicules')"><span class="nav-icon"></span> Véhicules</div>
+    <div class="nav-item" onclick="showPage('chauffeurs')"><span class="nav-icon"></span> Chauffeurs</div>
+    <div class="nav-item" onclick="showPage('trajets')"><span class="nav-icon"></span> Trajets</div>
+    <div class="nav-item" onclick="showPage('incidents')"><span class="nav-icon"></span> Incidents</div>
+    <div class="nav-item" onclick="showPage('lignes')"><span class="nav-icon"></span> Lignes</div>
+    <div class="nav-item" onclick="showPage('chat')"><span class="nav-icon"></span> Assistant IA</div>
+  </nav>
+</nav>
+
+<!-- MAIN -->
+<main class="main">
+
+  <!-- DASHBOARD -->
+  <div id="page-dashboard" class="page active">
+    <div class="page-title">Tableau de bord</div>
+    <div class="page-sub">Vue d'ensemble de la flotte et des opérations</div>
+    <div class="kpi-grid" id="kpi-grid">
+      <div class="loading"><div class="spin"></div> Chargement...</div>
+    </div>
+    <div class="table-card">
+      <div class="table-header"><h3>Trajets récents</h3></div>
+      <div class="table-wrap" id="dashboard-trajets"><div class="loading"><div class="spin"></div> Chargement...</div></div>
+    </div>
+  </div>
+
+  <!-- VEHICULES -->
+  <div id="page-vehicules" class="page">
+    <div class="page-title">Véhicules</div>
+    <div class="page-sub">Gestion de la flotte</div>
+    <div style="margin-bottom:12px;display:flex;gap:8px">
+      <button onclick="filterVehicules('all')" id="vf-all" style="background:#1d4ed8;color:#fff;border:none;border-radius:6px;padding:6px 14px;cursor:pointer;font-size:12px">Tous</button>
+      <button onclick="filterVehicules('actif')" id="vf-actif" style="background:#1e293b;color:#94a3b8;border:1px solid #334155;border-radius:6px;padding:6px 14px;cursor:pointer;font-size:12px">Actifs</button>
+      <button onclick="filterVehicules('maintenance')" id="vf-maint" style="background:#1e293b;color:#94a3b8;border:1px solid #334155;border-radius:6px;padding:6px 14px;cursor:pointer;font-size:12px">Maintenance</button>
+    </div>
+    <div class="table-card">
+      <div class="table-wrap" id="vehicules-table"><div class="loading"><div class="spin"></div> Chargement...</div></div>
+    </div>
+  </div>
+
+  <!-- CHAUFFEURS -->
+  <div id="page-chauffeurs" class="page">
+    <div class="page-title">Chauffeurs</div>
+    <div class="page-sub">Personnel de conduite</div>
+    <div class="table-card">
+      <div class="table-wrap" id="chauffeurs-table"><div class="loading"><div class="spin"></div> Chargement...</div></div>
+    </div>
+  </div>
+
+  <!-- TRAJETS -->
+  <div id="page-trajets" class="page">
+    <div class="page-title">Trajets récents</div>
+    <div class="page-sub">20 derniers voyages enregistrés</div>
+    <div class="table-card">
+      <div class="table-wrap" id="trajets-table"><div class="loading"><div class="spin"></div> Chargement...</div></div>
+    </div>
+  </div>
+
+  <!-- INCIDENTS -->
+  <div id="page-incidents" class="page">
+    <div class="page-title">Incidents</div>
+    <div class="page-sub">Suivi des incidents et anomalies</div>
+    <div class="table-card">
+      <div class="table-wrap" id="incidents-table"><div class="loading"><div class="spin"></div> Chargement...</div></div>
+    </div>
+  </div>
+
+  <!-- LIGNES -->
+  <div id="page-lignes" class="page">
+    <div class="page-title">Lignes de transport</div>
+    <div class="page-sub">Itinéraires et tarifs</div>
+    <div id="lignes-cards"><div class="loading"><div class="spin"></div> Chargement...</div></div>
+  </div>
+
+  <!-- CHAT IA -->
+  <div id="page-chat" class="page">
+    <div class="page-title">Assistant IA — TranspoBot</div>
+    <div class="page-sub">Posez vos questions en langage naturel</div>
+    <div class="chat-layout">
+      <div class="chat-main">
+        <div class="chat-messages" id="chat-messages">
+          <div class="msg bot">Bonjour ! Je suis TranspoBot, votre assistant IA. Posez-moi vos questions sur la flotte, les chauffeurs, les trajets ou les incidents. <br><br>Exemples : <em>"Combien de trajets cette semaine ?"</em>, <em>"Quel chauffeur a le plus d'incidents ?"</em></div>
+        </div>
+        <div class="chat-input-row">
+          <input type="text" id="chat-input" placeholder="Posez votre question..." onkeydown="if(event.key==='Enter')sendChat()">
+          <button onclick="sendChat()" id="send-btn">Envoyer</button>
+        </div>
+      </div>
+      <div class="chat-sidebar">
+        <h4>Questions suggérées</h4>
+        <div class="suggestion" onclick="askSuggestion(this.textContent)">Combien de trajets cette semaine ?</div>
+        <div class="suggestion" onclick="askSuggestion(this.textContent)">Quel chauffeur a le plus d'incidents ?</div>
+        <div class="suggestion" onclick="askSuggestion(this.textContent)">Quels véhicules sont en maintenance ?</div>
+        <div class="suggestion" onclick="askSuggestion(this.textContent)">Quelle est la recette totale ce mois ?</div>
+        <div class="suggestion" onclick="askSuggestion(this.textContent)">Quelle ligne est la plus rentable ?</div>
+        <div class="suggestion" onclick="askSuggestion(this.textContent)">Combien de chauffeurs sont disponibles ?</div>
+        <div class="suggestion" onclick="askSuggestion(this.textContent)">Quels incidents graves ne sont pas résolus ?</div>
+        <div class="suggestion" onclick="askSuggestion(this.textContent)">Nombre moyen de passagers par trajet ?</div>
+        <div class="suggestion" onclick="askSuggestion(this.textContent)">Quel véhicule a le plus de kilométrage ?</div>
+        <div class="suggestion" onclick="askSuggestion(this.textContent)">Liste des 5 derniers trajets annulés</div>
+        <br>
+        <h4>Historique</h4>
+        <div id="chat-history-list" style="font-size:12px;color:#64748b">Aucune question encore.</div>
+      </div>
+    </div>
+  </div>
+
+</main>
+
+<script>
+const API = window.location.origin;
+let vehiculesData = [];
+let chatHistory = [];
+let historyList = [];
+
+// ── Navigation ──────────────────────────────────────────────────────────────
+function showPage(page) {
+  document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
+  document.querySelectorAll('.nav-item').forEach(n => n.classList.remove('active'));
+  document.getElementById('page-' + page).classList.add('active');
+  event.currentTarget.classList.add('active');
+  if (page === 'dashboard') loadDashboard();
+  if (page === 'vehicules') loadVehicules();
+  if (page === 'chauffeurs') loadChauffeurs();
+  if (page === 'trajets') loadTrajets();
+  if (page === 'incidents') loadIncidents();
+  if (page === 'lignes') loadLignes();
+}
+
+// ── Helpers ─────────────────────────────────────────────────────────────────
+function fmt(n) {
+  if (n === null || n === undefined) return '—';
+  return Number(n).toLocaleString('fr-FR');
+}
+function statusBadge(s) {
+  const map = {termine:'green',en_cours:'blue',planifie:'purple',annule:'gray',actif:'green',maintenance:'amber',hors_service:'red',faible:'green',moyen:'amber',grave:'red',resolu:'green',ouvert:'red',panne:'amber',accident:'red',retard:'amber',autre:'gray'};
+  const labels = {termine:'Terminé',en_cours:'En cours',planifie:'Planifié',annule:'Annulé',actif:'Actif',maintenance:'Maintenance',hors_service:'Hors service',faible:'Faible',moyen:'Moyen',grave:'Grave',panne:'Panne',accident:'Accident',retard:'Retard',autre:'Autre'};
+  return `<span class="badge badge-${map[s]||'gray'}">${labels[s]||s}</span>`;
+}
+async function fetchJSON(url) {
+  const r = await fetch(API + url);
+  if (!r.ok) throw new Error('Erreur ' + r.status);
+  return r.json();
+}
+
+// ── Dashboard ───────────────────────────────────────────────────────────────
+async function loadDashboard() {
+  try {
+    const stats = await fetchJSON('/api/stats');
+    document.getElementById('kpi-grid').innerHTML = `
+      <div class="kpi blue"><div class="kpi-label">Trajets terminés</div><div class="kpi-value">${fmt(stats.total_trajets)}</div><div class="kpi-sub">${fmt(stats.trajets_semaine)} cette semaine</div></div>
+      <div class="kpi green"><div class="kpi-label">En cours</div><div class="kpi-value">${fmt(stats.trajets_en_cours)}</div><div class="kpi-sub">trajets actifs</div></div>
+      <div class="kpi amber"><div class="kpi-label">Véhicules actifs</div><div class="kpi-value">${fmt(stats.vehicules_actifs)}</div><div class="kpi-sub">${fmt(stats.vehicules_maintenance)} en maintenance</div></div>
+      <div class="kpi red"><div class="kpi-label">Incidents ouverts</div><div class="kpi-value">${fmt(stats.incidents_ouverts)}</div><div class="kpi-sub">${fmt(stats.incidents_graves)} graves</div></div>
+      <div class="kpi green"><div class="kpi-label">Recette totale</div><div class="kpi-value">${fmt(Math.round(stats.recette_totale))}</div><div class="kpi-sub">FCFA — ${fmt(Math.round(stats.recette_mois))} ce mois</div></div>
+      <div class="kpi purple"><div class="kpi-label">Chauffeurs dispos</div><div class="kpi-value">${fmt(stats.chauffeurs_dispos)}</div><div class="kpi-sub">disponibles maintenant</div></div>
+    `;
+    const trajets = await fetchJSON('/api/trajets/recent');
+    const rows = trajets.slice(0,8).map(t => `
+      <tr>
+        <td><strong>${t.ligne_code}</strong> ${t.ligne_nom}</td>
+        <td>${t.chauffeur}</td>
+        <td>${t.immatriculation}</td>
+        <td>${t.date_heure_depart ? t.date_heure_depart.replace('T',' ').slice(0,16) : '—'}</td>
+        <td>${fmt(t.nb_passagers)}</td>
+        <td>${fmt(Math.round(t.recette))} FCFA</td>
+        <td>${statusBadge(t.statut)}</td>
+      </tr>`).join('');
+    document.getElementById('dashboard-trajets').innerHTML = `<table><thead><tr><th>Ligne</th><th>Chauffeur</th><th>Véhicule</th><th>Départ</th><th>Passagers</th><th>Recette</th><th>Statut</th></tr></thead><tbody>${rows}</tbody></table>`;
+  } catch(e) { document.getElementById('kpi-grid').innerHTML = `<div class="loading" style="color:#f87171">Erreur: ${e.message}</div>`; }
+}
+
+// ── Véhicules ────────────────────────────────────────────────────────────────
+async function loadVehicules() {
+  try {
+    vehiculesData = await fetchJSON('/api/vehicules');
+    renderVehicules(vehiculesData);
+  } catch(e) { document.getElementById('vehicules-table').innerHTML = `<div class="loading" style="color:#f87171">Erreur: ${e.message}</div>`; }
+}
+function filterVehicules(f) {
+  document.querySelectorAll('[id^="vf-"]').forEach(b => { b.style.background='#1e293b'; b.style.color='#94a3b8'; b.style.border='1px solid #334155'; });
+  const btn = document.getElementById('vf-' + (f==='all'?'all':f==='actif'?'actif':'maint'));
+  if(btn){btn.style.background='#1d4ed8';btn.style.color='#fff';btn.style.border='none';}
+  const filtered = f === 'all' ? vehiculesData : vehiculesData.filter(v => v.statut === f);
+  renderVehicules(filtered);
+}
+function renderVehicules(data) {
+  const rows = data.map(v => `
+    <tr>
+      <td><strong>${v.immatriculation}</strong></td>
+      <td>${v.type}</td>
+      <td>${fmt(v.capacite)} places</td>
+      <td>${statusBadge(v.statut)}</td>
+      <td>${fmt(v.kilometrage)} km</td>
+      <td>${v.date_acquisition || '—'}</td>
+      <td>${v.chauffeur_prenom ? v.chauffeur_prenom+' '+v.chauffeur_nom : '—'}</td>
+    </tr>`).join('');
+  document.getElementById('vehicules-table').innerHTML = `<table><thead><tr><th>Immatriculation</th><th>Type</th><th>Capacité</th><th>Statut</th><th>Kilométrage</th><th>Acquisition</th><th>Chauffeur assigné</th></tr></thead><tbody>${rows}</tbody></table>`;
+}
+
+// ── Chauffeurs ───────────────────────────────────────────────────────────────
+async function loadChauffeurs() {
+  try {
+    const data = await fetchJSON('/api/chauffeurs');
+    const rows = data.map(c => `
+      <tr>
+        <td><strong>${c.nom} ${c.prenom}</strong></td>
+        <td>${c.telephone || '—'}</td>
+        <td>${c.categorie_permis || '—'}</td>
+        <td>${c.vehicule_immat !== '—' ? `<strong>${c.vehicule_immat}</strong> (${c.vehicule_type})` : '<span style="color:#64748b">Non assigné</span>'}</td>
+        <td>${c.disponibilite ? '<span class="badge badge-green">Disponible</span>' : '<span class="badge badge-red">Indisponible</span>'}</td>
+        <td>${fmt(c.nb_trajets)}</td>
+        <td>${c.nb_incidents > 0 ? `<span class="badge badge-amber">${c.nb_incidents}</span>` : '<span class="badge badge-green">0</span>'}</td>
+        <td>${c.date_embauche || '—'}</td>
+      </tr>`).join('');
+    document.getElementById('chauffeurs-table').innerHTML = `<table><thead><tr><th>Nom</th><th>Téléphone</th><th>Permis</th><th>Véhicule</th><th>Disponibilité</th><th>Trajets</th><th>Incidents</th><th>Embauche</th></tr></thead><tbody>${rows}</tbody></table>`;
+  } catch(e) { document.getElementById('chauffeurs-table').innerHTML = `<div class="loading" style="color:#f87171">Erreur: ${e.message}</div>`; }
+}
+
+// ── Trajets ──────────────────────────────────────────────────────────────────
+async function loadTrajets() {
+  try {
+    const data = await fetchJSON('/api/trajets/recent');
+    const rows = data.map(t => `
+      <tr>
+        <td><strong>${t.ligne_code}</strong></td>
+        <td>${t.origine} → ${t.destination}</td>
+        <td>${t.chauffeur}</td>
+        <td>${t.immatriculation}</td>
+        <td>${t.date_heure_depart ? t.date_heure_depart.replace('T',' ').slice(0,16) : '—'}</td>
+        <td>${t.date_heure_arrivee ? t.date_heure_arrivee.replace('T',' ').slice(0,16) : '—'}</td>
+        <td>${fmt(t.nb_passagers)}</td>
+        <td>${fmt(Math.round(t.recette))} F</td>
+        <td>${statusBadge(t.statut)}</td>
+        <td>${t.nb_incidents > 0 ? `<span class="badge badge-amber">${t.nb_incidents} incident(s)</span>` : '<span style="color:#64748b">—</span>'}</td>
+      </tr>`).join('');
+    document.getElementById('trajets-table').innerHTML = `<table><thead><tr><th>Ligne</th><th>Trajet</th><th>Chauffeur</th><th>Véhicule</th><th>Départ</th><th>Arrivée</th><th>Pass.</th><th>Recette</th><th>Statut</th><th>Incidents</th></tr></thead><tbody>${rows}</tbody></table>`;
+  } catch(e) { document.getElementById('trajets-table').innerHTML = `<div class="loading" style="color:#f87171">Erreur: ${e.message}</div>`; }
+}
+
+// ── Incidents ─────────────────────────────────────────────────────────────────
+async function loadIncidents() {
+  try {
+    const data = await fetchJSON('/api/incidents');
+    const rows = data.map(i => `
+      <tr>
+        <td>${statusBadge(i.type)}</td>
+        <td>${i.description || '—'}</td>
+        <td>${statusBadge(i.gravite)}</td>
+        <td>${i.ligne_code} — ${i.ligne_nom}</td>
+        <td>${i.chauffeur}</td>
+        <td>${i.immatriculation}</td>
+        <td>${i.date_incident ? i.date_incident.replace('T',' ').slice(0,16) : '—'}</td>
+        <td>${i.resolu ? '<span class="badge badge-green">Résolu</span>' : '<span class="badge badge-red">Ouvert</span>'}</td>
+      </tr>`).join('');
+    document.getElementById('incidents-table').innerHTML = `<table><thead><tr><th>Type</th><th>Description</th><th>Gravité</th><th>Ligne</th><th>Chauffeur</th><th>Véhicule</th><th>Date</th><th>Statut</th></tr></thead><tbody>${rows}</tbody></table>`;
+  } catch(e) { document.getElementById('incidents-table').innerHTML = `<div class="loading" style="color:#f87171">Erreur: ${e.message}</div>`; }
+}
+
+// ── Lignes ────────────────────────────────────────────────────────────────────
+async function loadLignes() {
+  try {
+    const data = await fetchJSON('/api/lignes');
+    const cards = data.map(l => {
+      const tarifs = l.tarifs.map(t => `<span style="background:#1e293b;border:1px solid #334155;border-radius:6px;padding:3px 8px;font-size:11px;margin-right:4px">${t.type_client}: <strong>${fmt(t.prix)}</strong> F</span>`).join('');
+      return `<div style="background:#1e293b;border:1px solid #334155;border-radius:10px;padding:16px;margin-bottom:12px">
+        <div style="display:flex;align-items:center;gap:12px;margin-bottom:12px">
+          <div style="background:#1d4ed8;color:#fff;font-weight:700;font-size:16px;width:44px;height:44px;border-radius:10px;display:flex;align-items:center;justify-content:center">${l.code}</div>
+          <div><div style="font-weight:600;font-size:15px;color:#f1f5f9">${l.nom}</div><div style="font-size:12px;color:#64748b">${l.origine} → ${l.destination}</div></div>
+          <div style="margin-left:auto;text-align:right"><div style="font-size:11px;color:#64748b">Recette totale</div><div style="font-weight:700;color:#4ade80">${fmt(Math.round(l.recette_totale))} FCFA</div></div>
+        </div>
+        <div style="display:flex;gap:16px;font-size:12px;color:#94a3b8;margin-bottom:10px">
+          <span>📏 ${l.distance_km} km</span>
+          <span>⏱ ${l.duree_minutes} min</span>
+          <span>🗺 ${l.nb_trajets} trajets</span>
+          <span>👥 ~${l.avg_passagers} pass./trajet</span>
+        </div>
+        <div>${tarifs}</div>
+      </div>`;
+    }).join('');
+    document.getElementById('lignes-cards').innerHTML = cards;
+  } catch(e) { document.getElementById('lignes-cards').innerHTML = `<div class="loading" style="color:#f87171">Erreur: ${e.message}</div>`; }
+}
+
+// ── Chat IA ────────────────────────────────────────────────────────────────────
+async function sendChat() {
+  const input = document.getElementById('chat-input');
+  const question = input.value.trim();
+  if (!question) return;
+  input.value = '';
+  document.getElementById('send-btn').disabled = true;
+
+  addMessage(question, 'user');
+  historyList.push(question);
+  updateHistoryList();
+
+  const typingEl = document.createElement('div');
+  typingEl.className = 'typing';
+  typingEl.innerHTML = '<span></span><span></span><span></span>';
+  document.getElementById('chat-messages').appendChild(typingEl);
+  scrollChat();
+
+  try {
+    const res = await fetch(API + '/api/chat', {
+      method: 'POST',
+      headers: {'Content-Type':'application/json'},
+      body: JSON.stringify({ question, history: chatHistory })
+    });
+    const data = await res.json();
+    typingEl.remove();
+
+    chatHistory.push({role:'user', content: question});
+    chatHistory.push({role:'assistant', content: data.answer || ''});
+    if (chatHistory.length > 12) chatHistory = chatHistory.slice(-12);
+
+    let html = `<div>${data.answer || 'Voici le résultat.'}</div>`;
+    if (data.sql) {
+      html += `<div class="sql-block">${data.sql}</div>`;
+    }
+    if (data.data && data.data.length > 0) {
+      const keys = Object.keys(data.data[0]);
+      const thead = keys.map(k => `<th>${k}</th>`).join('');
+      const tbody = data.data.slice(0,20).map(row =>
+        '<tr>' + keys.map(k => `<td>${row[k] ?? '—'}</td>`).join('') + '</tr>'
+      ).join('');
+      html += `<div class="result-table-wrap"><table class="result-table"><thead><tr>${thead}</tr></thead><tbody>${tbody}</tbody></table></div>`;
+      if (data.count > 20) html += `<div style="font-size:11px;color:#64748b;margin-top:6px">${data.count} résultats — 20 affichés</div>`;
+    } else if (data.sql && (!data.data || data.data.length === 0)) {
+      html += `<div style="font-size:12px;color:#64748b;margin-top:6px">Aucun résultat trouvé.</div>`;
+    }
+    addMessage(html, 'bot', true);
+  } catch(e) {
+    typingEl.remove();
+    addMessage(`Erreur de connexion : ${e.message}`, 'bot');
+  }
+  document.getElementById('send-btn').disabled = false;
+  scrollChat();
+}
+
+function addMessage(content, role, isHTML=false) {
+  const div = document.createElement('div');
+  div.className = 'msg ' + role;
+  if (isHTML) div.innerHTML = content;
+  else div.textContent = content;
+  document.getElementById('chat-messages').appendChild(div);
+  scrollChat();
+}
+function scrollChat() {
+  const el = document.getElementById('chat-messages');
+  el.scrollTop = el.scrollHeight;
+}
+function askSuggestion(q) {
+  document.getElementById('chat-input').value = q;
+  sendChat();
+}
+function updateHistoryList() {
+  const el = document.getElementById('chat-history-list');
+  if (historyList.length === 0) { el.textContent = 'Aucune question encore.'; return; }
+  el.innerHTML = historyList.slice(-5).reverse().map(q =>
+    `<div style="padding:4px 0;border-bottom:1px solid #1e293b;cursor:pointer;color:#94a3b8" onclick="document.getElementById('chat-input').value='${q.replace(/'/g,"\\'")}'">${q.slice(0,40)}${q.length>40?'…':''}</div>`
+  ).join('');
+}
+
+// ── Init ──────────────────────────────────────────────────────────────────────
+loadDashboard();
+</script>
+</body>
+</html>
