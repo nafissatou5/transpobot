@@ -341,10 +341,22 @@ def health():
 
 
 # ── Servir le frontend ──────────────────────────────────────────────────────
-if os.path.exists("index.html"):
-    @app.get("/")
-    def serve_frontend():
-        return FileResponse("index.html")
+
+from fastapi.staticfiles import StaticFiles
+from fastapi.responses import FileResponse
+
+# Monte le dossier static (IMPORTANT)
+app.mount("/static", StaticFiles(directory="static"), name="static")
+
+
+@app.get("/")
+def home():
+    return FileResponse("static/index.html")
+
+
+@app.get("/chat-ui")
+def chat_page():
+    return FileResponse("static/chat.html")
 
 # ── Lancement ───────────────────────────────────────────────────────────────
 if __name__ == "__main__":

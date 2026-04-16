@@ -5,9 +5,7 @@
 --  52 trajets (janv-avril 2026) | 18 incidents
 -- ============================================================
 
-CREATE DATABASE IF NOT EXISTS transpobot
-  CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
-USE transpobot;
+
 
 SET FOREIGN_KEY_CHECKS = 0;
 DROP TABLE IF EXISTS incidents;
